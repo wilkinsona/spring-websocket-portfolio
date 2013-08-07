@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:int-wskt="http://www.springframework.org/schema/integration/websocket"
+	xmlns:int="http://www.springframework.org/schema/integration"
+	xmlns:util="http://www.springframework.org/schema/util"
+	xsi:schemaLocation="http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration-3.0.xsd
+		http://www.springframework.org/schema/integration/websocket http://www.springframework.org/schema/integration/websocket/spring-integration-websocket-1.0.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.2.xsd">
+
+	<bean id="messageConverter" class="org.springframework.messaging.support.converter.MappingJackson2MessageConverter"/>
+
+	<bean id="userQueueSuffixResolver" class="org.springframework.messaging.simp.handler.SimpleUserQueueSuffixResolver"/>
+
+	<bean id="messagingTemplate" class="org.springframework.messaging.simp.SimpMessagingTemplate">
+		<constructor-arg ref="inbound"/>
+		<property name="converter" ref="messageConverter"/>
+	</bean>
+
+	<bean id="annotationMethodMessageHandler" class="org.springframework.messaging.simp.handler.AnnotationMethodMessageHandler">
+		<constructor-arg ref="messagingTemplate"/>
+		<constructor-arg ref="clientOutput"/>
+		<property name="destinationPrefixes" value="/app/"/>
+		<property name="messageConverter" ref="messageConverter"/>
+	</bean>
+
+	<bean id="userDestinationMessageHandler" class="org.springframework.messaging.simp.handler.UserDestinationMessageHandler">
+		<constructor-arg ref="messagingTemplate"/>
+		<constructor-arg ref="userQueueSuffixResolver"/>
+	</bean>
+
+	<bean class="org.springframework.integration.endpoint.EventDrivenConsumer">
+		<constructor-arg ref="inbound"/>
+		<constructor-arg ref="annotationMethodMessageHandler"/>
+	</bean>
+
+	<bean class="org.springframework.integration.endpoint.EventDrivenConsumer">
+		<constructor-arg ref="inbound"/>
+		<constructor-arg ref="userDestinationMessageHandler"/>
+	</bean>
+
+	<int:publish-subscribe-channel id="inbound"/>
+
+	<int:channel id="clientOutput" />
+
+	<bean id="stompProtocolHandler" class="org.springframework.messaging.simp.stomp.StompProtocolHandler">
+		<property name="userQueueSuffixResolver" ref="userQueueSuffixResolver"/>
+	</bean>
+
+	<int-wskt:message-driven-channel-adapter channel="inbound" path="/portfolio/**" sockjs="true" default-protocol-handler="stompProtocolHandler">
+		<int-wskt:protocol-handlers>
+			<ref bean="stompProtocolHandler"/>
+		</int-wskt:protocol-handlers>
+	</int-wskt:message-driven-channel-adapter>
+
+	<int-wskt:outbound-channel-adapter channel="clientOutput" default-protocol-handler="stompProtocolHandler">
+		<int-wskt:protocol-handlers>
+			<ref bean="stompProtocolHandler"/>
+		</int-wskt:protocol-handlers>
+	</int-wskt:outbound-channel-adapter>
+
+	<beans profile="simple-broker">
+		<bean id="simpleBrokerMessageHandler" class="org.springframework.messaging.simp.handler.SimpleBrokerMessageHandler">
+			<constructor-arg ref="clientOutput"/>
+			<property name="destinationPrefixes">
+				<util:list>
+					<value>/topic/</value>
+					<value>/queue/</value>
+				</util:list>
+			</property>
+		</bean>
+
+		<bean class="org.springframework.integration.endpoint.EventDrivenConsumer">
+			<constructor-arg ref="inbound"/>
+			<constructor-arg ref="simpleBrokerMessageHandler"/>
+		</bean>
+	</beans>
+
+</beans>

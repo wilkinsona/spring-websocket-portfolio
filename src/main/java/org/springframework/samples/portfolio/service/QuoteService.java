@@ -26,19 +26,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationListener;
 import org.springframework.messaging.core.MessageSendingOperations;
+import org.springframework.messaging.simp.BrokerAvailabilityEvent;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 
 @Service
-public class QuoteService {
+public class QuoteService implements ApplicationListener<BrokerAvailabilityEvent> {
 
 	private static Log logger = LogFactory.getLog(QuoteService.class);
 
 	private final MessageSendingOperations<String> messagingTemplate;
 
 	private final StockQuoteGenerator quoteGenerator = new StockQuoteGenerator();
+
+	private volatile boolean brokerAvailable = false;
 
 
 	@Autowired
@@ -48,12 +52,19 @@ public class QuoteService {
 
 	@Scheduled(fixedDelay=1000)
 	public void sendQuotes() {
-		for (Quote quote : this.quoteGenerator.generateQuotes()) {
-			if (logger.isTraceEnabled()) {
-				logger.trace("Sending quote " + quote);
+		if (this.brokerAvailable) {
+			for (Quote quote : this.quoteGenerator.generateQuotes()) {
+				if (logger.isTraceEnabled()) {
+					logger.trace("Sending quote " + quote);
+				}
+				this.messagingTemplate.convertAndSend("/topic/price.stock." + quote.getTicker(), quote);
 			}
-			this.messagingTemplate.convertAndSend("/topic/price.stock." + quote.getTicker(), quote);
 		}
+	}
+
+	@Override
+	public void onApplicationEvent(BrokerAvailabilityEvent event) {
+		this.brokerAvailable = event.isBrokerAvailable();
 	}
 
 
